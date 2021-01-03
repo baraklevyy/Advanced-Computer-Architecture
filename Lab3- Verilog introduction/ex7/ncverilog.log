@@ -1,0 +1,52 @@
+ncverilog(64): 15.20-s081: (c) Copyright 1995-2019 Cadence Design Systems, Inc.
+TOOL:	ncverilog	15.20-s081: Started on Nov 26, 2020 at 13:48:29 IST
+ncverilog
+	+access+rw
+	sat_count_tb.v
+	sat_count.v
+file: sat_count_tb.v
+	module worklib.main:v
+		errors: 0, warnings: 0
+file: sat_count.v
+	module worklib.fulladder:v
+		errors: 0, warnings: 0
+	module worklib.add4:v
+		errors: 0, warnings: 0
+	module worklib.addsub:v
+		errors: 0, warnings: 0
+	module worklib.sat_count:v
+		errors: 0, warnings: 0
+		Caching library 'worklib' ....... Done
+	Elaborating the design hierarchy:
+	Building instance overlay tables: .................... Done
+	Generating native compiled code:
+		worklib.main:v <0x40100206>
+			streams:   6, words:  7718
+		worklib.sat_count:v <0x70162ec1>
+			streams:   7, words:  2156
+	Building instance specific data structures.
+	Loading native compiled code:     .................... Done
+	Design hierarchy summary:
+		              Instances  Unique
+		Modules:              8       5
+		Primitives:          28       3
+		Registers:           10      10
+		Scalar wires:         6       -
+		Expanded wires:       8       2
+		Always blocks:        2       2
+		Initial blocks:       2       2
+		Cont. assignments:    1       1
+		Pseudo assignments:   7       7
+	Writing initial simulation snapshot: worklib.main:v
+Loading snapshot worklib.main:v .................... Done
+ncsim> source /eda_disk/cadence/tools/INCISIV/152/tools/inca/files/ncsimrc
+ncsim> run
+RESET SUCCEDD
+BRANCH SUCCEED
+TAKEN SUCCEED CASE1
+TAKEN SUCCEED CASE2
+OVERALL CORRECT
+Simulation complete via $finish(1) at time 160 NS + 0
+./sat_count_tb.v:58         $finish;
+ncsim> exit
+TOOL:	ncverilog	15.20-s081: Exiting on Nov 26, 2020 at 13:48:31 IST  (total: 00:00:02)

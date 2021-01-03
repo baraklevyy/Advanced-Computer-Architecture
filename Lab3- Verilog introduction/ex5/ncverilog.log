@@ -1,0 +1,45 @@
+ncverilog(64): 15.20-s081: (c) Copyright 1995-2019 Cadence Design Systems, Inc.
+TOOL:	ncverilog	15.20-s081: Started on Nov 26, 2020 at 11:29:22 IST
+ncverilog
+	+access+rw
+	addsub_tb.v
+	addsub.v
+Recompiling... reason: file '../ex4/add4.v' is newer than expected.
+	expected: Thu Nov 26 11:17:05 2020
+	actual:   Thu Nov 26 11:28:47 2020
+file: addsub.v
+	module worklib.add4:v
+		errors: 0, warnings: 0
+	module worklib.addsub:v
+		errors: 0, warnings: 0
+		Caching library 'worklib' ....... Done
+	Elaborating the design hierarchy:
+	Building instance overlay tables: .................... Done
+	Building instance specific data structures.
+	Loading native compiled code:     .................... Done
+	Design hierarchy summary:
+		              Instances  Unique
+		Modules:              7       4
+		Primitives:          28       3
+		Registers:            9       9
+		Scalar wires:         2       -
+		Expanded wires:       8       2
+		Vectored wires:       1       -
+		Initial blocks:       1       1
+		Cont. assignments:    1       2
+		Pseudo assignments:   3       3
+	Writing initial simulation snapshot: worklib.addsub_tb:v
+Loading snapshot worklib.addsub_tb:v .................... Done
+ncsim> source /eda_disk/cadence/tools/INCISIV/152/tools/inca/files/ncsimrc
+ncsim> run
+
+Test subtraction mode.
+
+Test addition mode.
+
+Pass all test
+
+Simulation complete via $finish(1) at time 1044 NS + 0
+./addsub_tb.v:77 	#10 $finish;
+ncsim> exit
+TOOL:	ncverilog	15.20-s081: Exiting on Nov 26, 2020 at 11:29:23 IST  (total: 00:00:01)
