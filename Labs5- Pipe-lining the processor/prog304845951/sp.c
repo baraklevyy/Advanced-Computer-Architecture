@@ -231,13 +231,17 @@ static void sp_ctl(sp_t *sp)
 
 	sprn->cycle_counter = spro->cycle_counter + 1;
 
+	//The single processor is still in initial position, before being activated - START
 	if (sp->start)
 		sprn->fetch0_active = 1;
 
-	// fetch0
+	// State: FETCH0
+		//Default case - FETCH1 is shut down
 	sprn->fetch1_active = 0;
+		//If another instruction is needed to be fetched then activate FETCH1 state
 	if (spro->fetch0_active) {
         sprn->fetch1_active = 1;
+        	//Perform an instruction read from a SRAMi
 	    if(!fin_dma) {
             llsim_mem_read(sp->srami, spro->fetch0_pc);
             sprn->fetch0_pc = (spro->fetch0_pc + 1) & 0x0000ffff;
@@ -245,20 +249,25 @@ static void sp_ctl(sp_t *sp)
         }
 	}
 
-	// fetch1
+	// State: FETCH1
     if (spro->fetch1_active) {
+    		//Activate DECODE0 state
         sprn->dec0_active = 1;
         if(!fin_dma){
+        	//Extract the already read instruction from SRAMi
             sprn->dec0_pc = spro->fetch1_pc;
             sprn->dec0_inst = llsim_mem_extract_dataout(sp->srami, 31, 0);
         }
     }
+    //Keep DECODE0 shut down in case an instruction was not read
     else sprn->dec0_active = 0;
 	
-	// dec0
+	// State: DECODE0
     if (spro->dec0_active) {
+    	//Activate DECODE1 (in case the DMA doesn't interrupt) - it will be activated in another case as well
         if(fin_dma) sprn->dec1_active = 1;
         else{
+        	//Analyze opcode
             int opcode = (spro->dec0_inst >> 25) & 0x1f;
 
             //branch prediction (CONTROL hazard)
@@ -284,6 +293,7 @@ static void sp_ctl(sp_t *sp)
             }
 
             else {
+            	//Extract all fields of the instruction
                 sprn->dec1_immediate = spro->dec0_inst & 0xffff;
                 sprn->dec1_opcode = (spro->dec0_inst >> 25) & 0x1f;
                 sprn->dec1_inst = spro->dec0_inst;
@@ -295,33 +305,37 @@ static void sp_ctl(sp_t *sp)
             }
         }
     }
+    //shut down DECODE1
     else sprn->dec1_active = 0;
 
-	// dec1
+
+
+	// State: DECODE1
     if (spro->dec1_active) {
         if(!fin_dma){
             //dec1 hazard handle (DATA hazard)
             int op = spro->exec1_opcode;
-            if (spro->dec1_src0 == 1) sprn->exec0_alu0 = spro->dec1_immediate; //immediate reg handle
-            else if (spro->dec1_src0 == 0) sprn->exec0_alu0 = 0; //zero reg handle
+            if (spro->dec1_src0 == 1) sprn->exec0_alu0 = spro->dec1_immediate; //immediate register handling
+            else if (spro->dec1_src0 == 0) sprn->exec0_alu0 = 0; //zero register handling
             else if (spro->exec1_opcode == LD && spro->exec1_active && spro->exec1_dst == spro->dec1_src0) sprn->exec0_alu0 = llsim_mem_extract_dataout(sp->sramd, 31, 0); // read after write MEMORY bypass
             else if (spro->exec1_active && spro->dec1_src0 == spro->exec1_dst && ((op >=0 && op < 8) || op == COPY || op == POLL)) sprn->exec0_alu0 = spro->exec1_aluout; // read after write ALU bypass
             else if (spro->dec1_src0 == 7 && spro->exec1_active && spro->exec1_aluout == 1 && (op  > 15 && op != HLT)) sprn->exec0_alu0 = spro->exec1_pc; // branch is taken in next stage - need to flush current write to R[7]
-            else sprn->exec0_alu0 = spro->r[spro->dec1_src0];
+            else sprn->exec0_alu0 = spro->r[spro->dec1_src0]; //General cases (e.g. r2-7)
 
-            if (spro->dec1_src1 == 1) sprn->exec0_alu1 = spro->dec1_immediate; //immediate reg handle
-            else if (spro->dec1_src1 == 0) sprn->exec0_alu1 = 0; //zero reg handle
+
+            if (spro->dec1_src1 == 1) sprn->exec0_alu1 = spro->dec1_immediate; //immediate register handling
+            else if (spro->dec1_src1 == 0) sprn->exec0_alu1 = 0; //zero register handle
             else if (spro->exec1_opcode == LD && spro->exec1_active && spro->dec1_src1 == spro->exec1_dst) sprn->exec0_alu1 = llsim_mem_extract_dataout(sp->sramd, 31, 0); // read after write MEMORY bypass
             else if (spro->exec1_active && spro->exec1_dst == spro->dec1_src1 && ((op >=0 && op < 8) || op == COPY || op == POLL)) sprn->exec0_alu1 = spro->exec1_aluout; // read after write ALU bypass
             else if (spro->dec1_src1 == 7 && spro->exec1_active && spro->exec1_aluout == 1 && (op  > 15 && op != HLT)) sprn->exec0_alu1 = spro->exec1_pc; // branch is taken in next stage - need to flush current write to R[7]
-            else sprn->exec0_alu1 = spro->r[spro->dec1_src1];
+            else sprn->exec0_alu1 = spro->r[spro->dec1_src1]; //General cases (e.g. r2-7)
 
-            if (spro->dec1_opcode == LHI){
+            if (spro->dec1_opcode == LHI){ //LHI opcode settings r[dst] = {imm from 31 to 16, r[dst] from 15 to 0}
                 sprn->exec0_alu1 = spro->dec1_immediate;
                 sprn->exec0_alu0 = spro->r[spro->dec1_dst];
             }
 
-            //move some of the pipeline to next step
+            //Advance the current instruction's variables to the next state in the pipeline - EXEC0
             sprn->exec0_pc = spro->dec1_pc;
             sprn->exec0_inst = spro->dec1_inst;
             sprn->exec0_opcode = spro->dec1_opcode;
@@ -330,29 +344,34 @@ static void sp_ctl(sp_t *sp)
             sprn->exec0_src0 = spro->dec1_src0;
             sprn->exec0_src1 = spro->dec1_src1;
         }
+        //Activate EXEC0 state
         sprn->exec0_active = 1;
     }
+    //Turn off EXEC0 state
     else sprn->exec0_active = 0;
 
-	// exec0
+
+
+	// State: EXEC0
     if (spro->exec0_active) {
+    	//setting easier-access-variables for ALU
         int alu0 = spro->exec0_alu0;
         int alu1 = spro->exec0_alu1;
         //exec0 hazard handle (DATA hazard)
         int op = spro->exec1_opcode;
-        if (spro->exec0_src0 != 0 && spro->exec0_src0 != 1) {
+        if (spro->exec0_src0 != 0 && spro->exec0_src0 != 1) { //if 2<=src0<=7
             if (spro->exec1_opcode== LD && spro->exec1_active && spro->exec0_src0 == spro->exec1_dst) alu0 = llsim_mem_extract_dataout(sp->sramd, 31, 0); // read after write MEMORY bypass
             else if (spro->exec1_active && spro->exec1_dst == spro->exec0_src0 && ((op >=0 && op < 8) || op == COPY || op == POLL)) alu0= spro->exec1_aluout;// read after write ALU bypass
             else if (spro->exec0_src0 == 7 && spro->exec1_active &&  (op  > 15 && op != HLT)) alu0 = spro->exec1_pc; // branch is taken in next stage - need to flush current write to R[7]
         }
 
-        if (spro->exec0_src1 != 0 && spro->exec0_src1 != 1) {
+        if (spro->exec0_src1 != 0 && spro->exec0_src1 != 1) { //if 2<=src1<=7
             if (op == LD && spro->exec1_active && spro->exec1_dst == spro->exec0_src1) alu1 = llsim_mem_extract_dataout(sp->sramd, 31, 0); // read after write MEMORY bypass
             else if (spro->exec1_active && spro->exec1_dst == spro->exec0_src1 && ((op >=0 && op < 8) || op == COPY || op == POLL)) alu1 = spro->exec1_aluout; // read after write ALU bypass
             else if (spro->exec0_src1 == 7 && spro->exec1_active && (op  > 15 && op != HLT)) alu1 = spro->exec1_pc; // branch is taken in next stage - need to flush current write to R[7]
         }
 
-        //exec operation
+        //ALU execution operation
         if (spro->exec0_opcode == ADD) sprn->exec1_aluout = alu0 + alu1;
         else if (spro->exec0_opcode == SUB) sprn->exec1_aluout = alu0 - alu1;
         else if (spro->exec0_opcode == LSF) sprn->exec1_aluout = alu0 << alu1;
@@ -380,23 +399,24 @@ static void sp_ctl(sp_t *sp)
         op = spro->exec1_opcode;
         int stat = 0;
         int op_change = 0;
-        if (spro->dma_busy || (op == COPY && spro->exec1_active)) stat = 1;
-        if ((op >=0 && op < 8) || op == COPY || op == POLL) op_change = 1;
+        if (spro->dma_busy || (op == COPY && spro->exec1_active)) stat = 1; //Validate the DMA hasn't started a COPY already or is about to start one (if it is in EXEC1)
+        if ((op >=0 && op < 8) || op == COPY || op == POLL) op_change = 1; //Make sure a Branch instruction or Halt isn't present at EXEC1
         if (spro->exec0_opcode == COPY && stat == 0) {
+        //COPY instruction was inserted while the DMA isn't currently processing. Set the DMA variables for a new COPY
             if (spro->exec1_active && spro->exec1_dst == spro->exec0_src0 && op_change) // Update COPY source address register
-                //src0 - RAW hazard handle
+                //src0 - DATA hazard handle (fetch the updated src0 register value from aluout of EXEC1 if it was activated in this cycle)
                 sprn->dma_src = spro->exec1_aluout;
             else
                 sprn->dma_src = spro->r[spro->exec0_src0];
             if (spro->exec1_dst == spro->exec0_src1 && spro->exec1_active && op_change) // Update COPY block length register
-                //handle Read After Write Hazard for src1
+            	//src1 - DATA hazard handle (fetch the updated src1 register value from aluout of EXEC1 if it was activated in this cycle)
                 sprn->dma_left = spro->exec1_aluout;
             else
                 sprn->dma_left = spro->r[spro->exec0_src1]; //sprn->dma_left = spro->exec0_immediate;
             sprn->dma_dest = spro->r[spro->exec0_dst]; //Update destination address register
         }
 
-
+        //Advance the current instruction's variables to the next state in the pipeline - EXEC1
         sprn->exec1_inst = spro->exec0_inst;
         sprn->exec1_alu0 = alu0;
         sprn->exec1_alu1 = alu1;
@@ -408,9 +428,12 @@ static void sp_ctl(sp_t *sp)
         sprn->exec1_pc = spro->exec0_pc;
         sprn->exec1_active = 1;
     }
+    //Turn off EXEC1 state
     else sprn->exec1_active = 0;
 
-	// exec1
+
+
+	// State: EXEC1
 	if (spro->exec1_active) {
 	    //print to instruction file
         sp_printf("exec1: pc %d, inst %08x, opcode %d, aluout %d\n", spro->exec1_pc, spro->exec1_inst, spro->exec1_opcode, spro->exec1_aluout);
@@ -477,41 +500,47 @@ static void sp_ctl(sp_t *sp)
             default:
                 break;
         }
-
+        //Advance to the next instruction in the next CPU cycle
         sp->instruction_cnt += 1;
         if ((fin_dma == 1) || (spro->exec1_opcode == HLT)){
-            if(spro->dma_left > 0) fin_dma = 1;
+            if(spro->dma_left > 0) fin_dma = 1; //Keep cycling until DMA is done, and then finish the simulation...
             else{
+            	//HALT!!!!!!!
                 fprintf(inst_trace_fp, "sim finished at pc %d, %d instructions", sp->spro->exec1_pc, sp->instruction_cnt);
                 fin_dma = 0;
                 llsim_stop();
                 dump_sram(sp, "srami_out.txt", sp->srami);
                 dump_sram(sp, "sramd_out.txt", sp->sramd);
+                //HALTED!!!!!
             }
         }
+        //Branch instruction final execution
         else if (spro->exec1_opcode > 15 && spro->exec1_opcode != HLT){ // Branch operation
             int pc_next;
             int b_taken = 0;
+            //Special case: Jump with no conditions
             if(spro->exec1_opcode == JIN){
                 b_taken = 1;
                 pc_next = spro->exec1_alu0 & 0xffff;
             }
             else {
+            	//Other Branch instruction: validate jumping condition
                 if (spro->exec1_aluout) {
                     b_taken = 1;
                     pc_next = spro->exec1_immediate & 0x0ffff;
                 }
+                //Branch was not taken -> proceed to consecutive instruction in SRAMi
                 else pc_next = (spro->exec1_pc + 1) & 0x0ffff;
             }
 
-            // update bht
+            //Update bht
             if (b_taken == 1) {
                 sprn->r[7] = spro->exec1_pc;
                 if(spro->bht[spro->exec1_pc % 20] + 1 < 20) sprn->bht[spro->exec1_pc % 20] = spro->bht[spro->exec1_pc % 20] + 1;
             }
             else if (spro->bht[spro->exec1_pc % 20] - 1 > 0) sprn->bht[spro->exec1_pc % 20] = spro->bht[spro->exec1_pc % 20] - 1;
 
-            //flush pipeline if needed
+            //Flush pipeline if needed
             if ((spro->exec0_active && spro->exec0_pc != pc_next) || (spro->fetch0_active && spro->fetch0_pc != pc_next) || (spro->fetch1_active && spro->fetch1_pc != pc_next) || (spro->dec0_active && spro->dec0_pc != pc_next) || (spro->dec1_active && spro->dec1_pc != pc_next)){
                 sprn->fetch0_pc = pc_next;
                 sprn->fetch0_active = 1;
@@ -524,51 +553,62 @@ static void sp_ctl(sp_t *sp)
 
 
         }
+        //Load instruction: Read extraction
         else if (spro->exec1_opcode == LD) {
             if (spro->exec1_dst != 0 && spro->exec1_dst != 1) sprn->r[spro->exec1_dst] = llsim_mem_extract_dataout(sp->sramd, 31, 0);
         }
+        //Store instruction: Store initialization & writing
         else if (spro->exec1_opcode == ST) {
             llsim_mem_set_datain(sp->sramd, spro->exec1_alu0, 31, 0);
             llsim_mem_write(sp->sramd, spro->exec1_alu1);
         }
-
+        //All other operands : ADD,SUB,RSF,LSF,LHI,XOR,AND,OR
         else if (spro->exec1_dst != 0 && spro->exec1_dst != 1) sprn->r[spro->exec1_dst] = spro->exec1_aluout;
     }
 
 	mem_busy = 0;
+	//Activating DMA for COPY
     if (spro->exec1_opcode == COPY && active_dma == 0) active_dma = 1;
+    //SRAMd access conflict prevention
     if (!fin_dma && sprn->dec1_opcode != LD && sprn->exec0_opcode != LD && sprn->exec1_opcode != LD && sprn->exec0_opcode != ST && sprn->dec1_opcode != ST && sprn->exec1_opcode != ST) mem_busy = 0;
     else if (!fin_dma) mem_busy = 1;
 
-    //exec1 dma
+    //exec1 dma - DMA states nexus
     switch (spro->dma_state) {
         case DMA_IDLE:
+        	//If the SRAMd is not currently accessed by the CPU & the DMA is needed to operate then allow the DMA to access the SRAMd for reading operation
             if (active_dma && !mem_busy) {
                 sprn->dma_busy = 1;
                 sprn->dma_state = DMA_WAIT;
             }
+            //Else keep the DMA idle until is requested to operate
             else sprn->dma_state = DMA_IDLE;
             break;
 
         case DMA_WAIT:
+        	//If the DMA is needed to copy data, then perform a read from SRAMd and proceed to Writing state
             llsim_mem_read(sp->sramd, spro->dma_src);
             sprn->dma_state = DMA_START;
             break;
 
         case DMA_START:
+        	//DMA is in Writing state after data was read from a source address, and will now be written to a destination address
             llsim_mem_set_datain(sp->sramd, llsim_mem_extract_dataout(sp->sramd, 31, 0), 31, 0);
             llsim_mem_write(sp->sramd, spro->dma_dest);
 
+            //DMA COPY variables update e.g. block size is reduced by 1
             sprn->dma_src = spro->dma_src + 1;
             sprn->dma_dest = spro->dma_dest + 1;
             sprn->dma_left = spro->dma_left - 1;
 
+            //If the DMA is done copying, it becomes idle
             if ((spro->dma_left - 1 ) == 0) {
                 sprn->dma_state = DMA_IDLE;
                 sprn->dma_busy = 0;
                 active_dma = 0;
             }
             else {
+            	//Else the DMA proceeds to another Reading and Writing phase only if SRAMd is not busy
                 if (mem_busy) sprn->dma_state = DMA_IDLE;
                 else sprn->dma_state = DMA_WAIT;
             }
